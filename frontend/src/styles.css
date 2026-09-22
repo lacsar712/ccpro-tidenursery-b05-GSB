@@ -278,6 +278,94 @@ th {
   color: #1a7a6c;
 }
 
+.badge.window {
+  background: #fff1e0;
+  color: var(--warn);
+  border: 1px solid rgba(201, 133, 26, 0.35);
+  white-space: nowrap;
+}
+
+.window-banner {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 241, 224, 0.8);
+  border: 1px solid rgba(201, 133, 26, 0.3);
+  color: #8a5a10;
+  font-size: 14px;
+}
+
+.row-actions {
+  white-space: nowrap;
+}
+
+.row-actions .btn {
+  margin-right: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+tr.row-editing {
+  background: rgba(230, 246, 248, 0.7);
+}
+
+.form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.confirm-field input {
+  border-color: rgba(201, 133, 26, 0.45);
+  background: #fffdf8;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 40, 48, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 50;
+}
+
+.modal {
+  width: min(760px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  background: #fbfefe;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  padding: 22px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--sea-deep);
+}
+
+.modal-subtitle {
+  margin: 20px 0 10px;
+  font-size: 15px;
+  color: var(--sea-mid);
+}
+
+.switch-form {
+  margin-top: 14px;
+}
+
 .login-page {
   min-height: 100vh;
   display: grid;

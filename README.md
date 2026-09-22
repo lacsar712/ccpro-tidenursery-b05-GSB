@@ -42,11 +42,15 @@ docker compose up --build
 ## 功能模块
 
 1. **Auth**：JWT 登录（OAuth2 Password），`/api/auth/login`、`/api/auth/me`
-2. **Hatchery 育苗场**：`name`、`seawaterSource`、`notes`
-3. **Pond 育苗塘**：`hatcheryId`、`pondCode`、`species`、`volumeM3`、`status(stocked|dry|quarantine)`；同场 `pondCode` 唯一
-4. **WaterSample 水质样**：`pondId`、`sampledAt`、`tempC`、`salinityPpt`、`doMgL`、`ph`、`notes`；`doMgL > 0` 且 `ph ∈ [6,9]`，否则返回 **400**
-5. **FeedEvent 投喂**：`pondId`、`fedAt`、`feedType`、`amountKg`、`operatorName`
-6. **Dashboard**：塘总数、quarantine 数、近 24h 采样数、近 7 日投喂总量 kg
+2. **Hatchery 育苗场**：`name`、`seawaterSource`、`notes`；列表每行带 `sourceConfirmationOpen`（是否处于水源确认窗），`GET /api/hatcheries/source-confirmation-open-count` 返回开放确认窗场数，二者口径一致
+3. **海水源切换日志**：海水源变更必须登记切换，禁止只改场字段不写日志、也禁止只写日志不改场字段。`POST /api/hatcheries/{id}/source-switches` 在**同一事务**内写日志并更新场上海水源字段。日志字段：所属育苗场、切换时刻、旧水源摘要、新水源摘要（去空白至少 4 字）、操作人；`GET /api/hatcheries/{id}/source-switches` 查询该场切换记录
+4. **水源确认规则**：自切换时刻起 **24 小时内**，该场下属塘口**新建或更新**水质样，请求必须带 `sourceConfirmation`，且其去空白后与新水源摘要相同，否则返回 **409**；改已有样缺确认同样拒绝。超过 24 小时不再要求确认。海水源字段不可通过普通的育苗场 PUT 接口直接修改
+5. **Pond 育苗塘**：`hatcheryId`、`pondCode`、`species`、`volumeM3`、`status(stocked|dry|quarantine)`；同场 `pondCode` 唯一
+6. **WaterSample 水质样**：`pondId`、`sampledAt`、`tempC`、`salinityPpt`、`doMgL`、`ph`、`notes`；`doMgL > 0` 且 `ph ∈ [6,9]`，否则返回 **400**；支持 PUT 更新（更新同样受水源确认规则约束）
+7. **FeedEvent 投喂**：`pondId`、`fedAt`、`feedType`、`amountKg`、`operatorName`
+8. **Dashboard**：塘总数、quarantine 数、近 24h 采样数、近 7 日投喂总量 kg
+
+> 种子数据中「东港潮汐一号场」在 2 小时前刚完成海水源切换（近海沙滤井水 → 外海深管取水），当前仍在 24 小时确认窗内：对其下属塘口（A-01、A-02）登记或修改水质样时，水源确认须填写 `外海深管取水`。
 
 ## 前端页面
 

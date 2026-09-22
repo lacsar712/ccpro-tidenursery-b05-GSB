@@ -1,11 +1,15 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { api } from '../api/client'
-import type { Pond, WaterSample } from '../types'
+import type { Hatchery, Pond, WaterSample } from '../types'
 
-function nowLocal() {
-  const d = new Date()
+function toLocalInput(iso: string) {
+  const d = new Date(iso)
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
   return d.toISOString().slice(0, 16)
+}
+
+function nowLocal() {
+  return toLocalInput(new Date().toISOString())
 }
 
 const empty = {
@@ -16,20 +20,25 @@ const empty = {
   doMgL: 6.5,
   ph: 8.0,
   notes: '',
+  sourceConfirmation: '',
 }
 
 export default function WaterSamples() {
   const [ponds, setPonds] = useState<Pond[]>([])
+  const [hatcheries, setHatcheries] = useState<Hatchery[]>([])
   const [rows, setRows] = useState<WaterSample[]>([])
   const [form, setForm] = useState(empty)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [error, setError] = useState('')
 
   async function load() {
-    const [ps, ws] = await Promise.all([
+    const [ps, hs, ws] = await Promise.all([
       api<Pond[]>('/api/ponds'),
+      api<Hatchery[]>('/api/hatcheries'),
       api<WaterSample[]>('/api/water-samples'),
     ])
     setPonds(ps)
+    setHatcheries(hs)
     setRows(ws)
     if (!form.pondId && ps[0]) {
       setForm((f) => ({ ...f, pondId: ps[0].id }))
@@ -38,30 +47,80 @@ export default function WaterSamples() {
 
   useEffect(() => {
     load().catch((e) => setError(e.message))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const hatcheryByPond = (pondId: number): Hatchery | undefined => {
+    const pond = ponds.find((p) => p.id === pondId)
+    return hatcheries.find((h) => h.id === pond?.hatcheryId)
+  }
+
+  const activeHatchery = hatcheryByPond(form.pondId)
+  const confirmationRequired = !!activeHatchery?.sourceConfirmationOpen
+  // 切换事务会把场海水源字段更新为新水源摘要，二者一致，可直接作为预填值。
+  const expectedSource = activeHatchery?.seawaterSource ?? ''
+
+  function selectPond(pondId: number) {
+    const h = hatcheryByPond(pondId)
+    setForm((f) => ({
+      ...f,
+      pondId,
+      sourceConfirmation: h?.sourceConfirmationOpen ? h.seawaterSource : '',
+    }))
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+    const payload = {
+      ...form,
+      sampledAt: new Date(form.sampledAt).toISOString(),
+      ...(confirmationRequired
+        ? { sourceConfirmation: form.sourceConfirmation }
+        : {}),
+    }
     try {
-      await api('/api/water-samples', {
-        method: 'POST',
-        body: JSON.stringify({
-          ...form,
-          sampledAt: new Date(form.sampledAt).toISOString(),
-        }),
-      })
-      setForm((f) => ({ ...empty, pondId: f.pondId, sampledAt: nowLocal() }))
+      if (editingId === null) {
+        await api('/api/water-samples', { method: 'POST', body: JSON.stringify(payload) })
+      } else {
+        await api(`/api/water-samples/${editingId}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        })
+      }
+      resetForm()
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败')
     }
   }
 
+  function resetForm() {
+    setEditingId(null)
+    setForm((f) => ({ ...empty, pondId: f.pondId, sampledAt: nowLocal() }))
+  }
+
+  function startEdit(r: WaterSample) {
+    setError('')
+    setEditingId(r.id)
+    const h = hatcheryByPond(r.pondId)
+    setForm({
+      pondId: r.pondId,
+      sampledAt: toLocalInput(r.sampledAt),
+      tempC: r.tempC,
+      salinityPpt: r.salinityPpt,
+      doMgL: r.doMgL,
+      ph: r.ph,
+      notes: r.notes ?? '',
+      sourceConfirmation: h?.sourceConfirmationOpen ? h.seawaterSource : '',
+    })
+  }
+
   async function remove(id: number) {
     if (!confirm('确认删除该水质样？')) return
     try {
       await api(`/api/water-samples/${id}`, { method: 'DELETE' })
+      if (editingId === id) resetForm()
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : '删除失败')
@@ -77,7 +136,9 @@ export default function WaterSamples() {
     <div>
       <header className="page-header">
         <h1>水质采样</h1>
-        <p className="muted">校验：溶解氧 doMgL &gt; 0，pH ∈ [6, 9]</p>
+        <p className="muted">
+          校验：溶解氧 doMgL &gt; 0，pH ∈ [6, 9]；塘口所属场海水源切换 24 小时内须带水源确认，否则 409
+        </p>
       </header>
       {error && <div className="error">{error}</div>}
 
@@ -86,7 +147,7 @@ export default function WaterSamples() {
           塘口
           <select
             value={form.pondId}
-            onChange={(e) => setForm({ ...form, pondId: Number(e.target.value) })}
+            onChange={(e) => selectPond(Number(e.target.value))}
             required
           >
             {ponds.map((p) => (
@@ -152,9 +213,31 @@ export default function WaterSamples() {
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
           />
         </label>
-        <button type="submit" className="btn primary">
-          登记水质样
-        </button>
+
+        {confirmationRequired && (
+          <label className="span-2 confirm-field">
+            水源确认（该场海水源切换未满 24 小时，须与新水源摘要一致：{expectedSource}）
+            <input
+              value={form.sourceConfirmation}
+              onChange={(e) =>
+                setForm({ ...form, sourceConfirmation: e.target.value })
+              }
+              placeholder={`请输入新水源摘要，如：${expectedSource}`}
+              required
+            />
+          </label>
+        )}
+
+        <div className="form-actions">
+          <button type="submit" className="btn primary">
+            {editingId === null ? '登记水质样' : '保存修改'}
+          </button>
+          {editingId !== null && (
+            <button type="button" className="btn ghost" onClick={resetForm}>
+              取消编辑
+            </button>
+          )}
+        </div>
       </form>
 
       <div className="table-wrap">
@@ -174,7 +257,7 @@ export default function WaterSamples() {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} className={editingId === r.id ? 'row-editing' : ''}>
                 <td>{r.id}</td>
                 <td>{pondLabel(r.pondId)}</td>
                 <td>{new Date(r.sampledAt).toLocaleString()}</td>
@@ -183,7 +266,10 @@ export default function WaterSamples() {
                 <td>{r.doMgL}</td>
                 <td>{r.ph}</td>
                 <td>{r.notes || '—'}</td>
-                <td>
+                <td className="row-actions">
+                  <button className="btn ghost" onClick={() => startEdit(r)}>
+                    编辑
+                  </button>
                   <button className="btn ghost" onClick={() => remove(r.id)}>
                     删除
                   </button>
