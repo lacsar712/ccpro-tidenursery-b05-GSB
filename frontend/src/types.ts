@@ -10,6 +10,20 @@ export type Hatchery = {
   name: string
   seawaterSource: string
   notes?: string | null
+  sourceConfirmationOpen: boolean
+}
+
+export type SourceSwitchLog = {
+  id: number
+  hatcheryId: number
+  switchedAt: string
+  oldSourceSummary?: string | null
+  newSourceSummary: string
+  operatorName: string
+}
+
+export type OpenConfirmCount = {
+  openCount: number
 }
 
 export type Pond = {

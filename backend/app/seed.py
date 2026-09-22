@@ -5,6 +5,7 @@ from app.database import SessionLocal
 from app.models.feed_event import FeedEvent
 from app.models.hatchery import Hatchery
 from app.models.pond import Pond
+from app.models.source_switch_log import SourceSwitchLog
 from app.models.user import User
 from app.models.water_sample import WaterSample
 
@@ -34,7 +35,7 @@ def seed() -> None:
         if db.query(Hatchery).count() == 0:
             h1 = Hatchery(
                 name="东港潮汐一号场",
-                seawater_source="近海沙滤井水",
+                seawater_source="外海深管抽海水",
                 notes="主养中国对虾苗",
             )
             h2 = Hatchery(
@@ -77,6 +78,16 @@ def seed() -> None:
             db.flush()
 
             now = datetime.now(timezone.utc)
+            # 种子一场 2 小时前刚完成海水源切换，日志与场字段一致，仍处于 24 小时确认窗内
+            db.add(
+                SourceSwitchLog(
+                    hatchery_id=h1.id,
+                    switched_at=now - timedelta(hours=2),
+                    old_source_summary="近海沙滤井水",
+                    new_source_summary="外海深管抽海水",
+                    operator_name="场长",
+                )
+            )
             db.add_all(
                 [
                     WaterSample(

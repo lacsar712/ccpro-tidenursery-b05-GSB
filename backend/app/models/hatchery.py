@@ -17,3 +17,9 @@ class Hatchery(Base):
     ponds: Mapped[List["Pond"]] = relationship(
         "Pond", back_populates="hatchery", cascade="all, delete-orphan"
     )
+    source_switch_logs: Mapped[List["SourceSwitchLog"]] = relationship(
+        "SourceSwitchLog",
+        back_populates="hatchery",
+        cascade="all, delete-orphan",
+        order_by="SourceSwitchLog.switched_at.desc()",
+    )

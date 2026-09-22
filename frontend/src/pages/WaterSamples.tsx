@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { api } from '../api/client'
-import type { Pond, WaterSample } from '../types'
+import type { Hatchery, Pond, WaterSample } from '../types'
 
 function nowLocal() {
   const d = new Date()
@@ -16,19 +16,24 @@ const empty = {
   doMgL: 6.5,
   ph: 8.0,
   notes: '',
+  sourceConfirmation: '',
 }
 
 export default function WaterSamples() {
+  const [hatcheries, setHatcheries] = useState<Hatchery[]>([])
   const [ponds, setPonds] = useState<Pond[]>([])
   const [rows, setRows] = useState<WaterSample[]>([])
   const [form, setForm] = useState(empty)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [error, setError] = useState('')
 
   async function load() {
-    const [ps, ws] = await Promise.all([
+    const [hs, ps, ws] = await Promise.all([
+      api<Hatchery[]>('/api/hatcheries'),
       api<Pond[]>('/api/ponds'),
       api<WaterSample[]>('/api/water-samples'),
     ])
+    setHatcheries(hs)
     setPonds(ps)
     setRows(ws)
     if (!form.pondId && ps[0]) {
@@ -38,24 +43,64 @@ export default function WaterSamples() {
 
   useEffect(() => {
     load().catch((e) => setError(e.message))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const selectedPond = ponds.find((p) => p.id === form.pondId)
+  const selectedHatchery = hatcheries.find(
+    (h) => h.id === selectedPond?.hatcheryId,
+  )
+  const confirmationOpen = selectedHatchery?.sourceConfirmationOpen ?? false
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+    const body: Record<string, unknown> = {
+      ...form,
+      sampledAt: new Date(form.sampledAt).toISOString(),
+    }
+    // 确认窗关闭后不再发送水源确认字段
+    if (!confirmationOpen) delete body.sourceConfirmation
     try {
-      await api('/api/water-samples', {
-        method: 'POST',
-        body: JSON.stringify({
-          ...form,
-          sampledAt: new Date(form.sampledAt).toISOString(),
-        }),
-      })
+      if (editingId === null) {
+        await api('/api/water-samples', { method: 'POST', body: JSON.stringify(body) })
+      } else {
+        const { pondId, ...updateBody } = body
+        await api(`/api/water-samples/${editingId}`, {
+          method: 'PUT',
+          body: JSON.stringify(updateBody),
+        })
+      }
       setForm((f) => ({ ...empty, pondId: f.pondId, sampledAt: nowLocal() }))
+      setEditingId(null)
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败')
     }
+  }
+
+  function startEdit(r: WaterSample) {
+    setEditingId(r.id)
+    setError('')
+    setForm({
+      pondId: r.pondId,
+      sampledAt: (() => {
+        const d = new Date(r.sampledAt)
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+        return d.toISOString().slice(0, 16)
+      })(),
+      tempC: r.tempC,
+      salinityPpt: r.salinityPpt,
+      doMgL: r.doMgL,
+      ph: r.ph,
+      notes: r.notes || '',
+      sourceConfirmation: '',
+    })
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setForm((f) => ({ ...empty, pondId: f.pondId, sampledAt: nowLocal() }))
   }
 
   async function remove(id: number) {
@@ -77,7 +122,10 @@ export default function WaterSamples() {
     <div>
       <header className="page-header">
         <h1>水质采样</h1>
-        <p className="muted">校验：溶解氧 doMgL &gt; 0，pH ∈ [6, 9]</p>
+        <p className="muted">
+          校验：溶解氧 doMgL &gt; 0，pH ∈ [6, 9]；海水源切换后 24
+          小时内须携带与新水源摘要一致的水源确认
+        </p>
       </header>
       {error && <div className="error">{error}</div>}
 
@@ -88,6 +136,7 @@ export default function WaterSamples() {
             value={form.pondId}
             onChange={(e) => setForm({ ...form, pondId: Number(e.target.value) })}
             required
+            disabled={editingId !== null}
           >
             {ponds.map((p) => (
               <option key={p.id} value={p.id}>
@@ -145,6 +194,20 @@ export default function WaterSamples() {
             required
           />
         </label>
+        {confirmationOpen && (
+          <label className="span-2">
+            水源确认（该场处于 24 小时确认窗，须填写新水源摘要：
+            {selectedHatchery?.seawaterSource}）
+            <input
+              value={form.sourceConfirmation}
+              onChange={(e) =>
+                setForm({ ...form, sourceConfirmation: e.target.value })
+              }
+              placeholder={selectedHatchery?.seawaterSource}
+              required
+            />
+          </label>
+        )}
         <label className="span-2">
           备注
           <input
@@ -152,9 +215,16 @@ export default function WaterSamples() {
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
           />
         </label>
-        <button type="submit" className="btn primary">
-          登记水质样
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button type="submit" className="btn primary">
+            {editingId === null ? '登记水质样' : '保存修改'}
+          </button>
+          {editingId !== null && (
+            <button type="button" className="btn ghost" onClick={cancelEdit}>
+              取消编辑
+            </button>
+          )}
+        </div>
       </form>
 
       <div className="table-wrap">
@@ -184,6 +254,9 @@ export default function WaterSamples() {
                 <td>{r.ph}</td>
                 <td>{r.notes || '—'}</td>
                 <td>
+                  <button className="btn ghost" onClick={() => startEdit(r)}>
+                    编辑
+                  </button>{' '}
                   <button className="btn ghost" onClick={() => remove(r.id)}>
                     删除
                   </button>
